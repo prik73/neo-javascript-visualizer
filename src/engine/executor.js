@@ -78,7 +78,7 @@ class Executor {
             return { success: true, ast: this.ast };
         } catch (error) {
             // Generic error message to avoid information disclosure
-            return { success: false, error: 'Syntax error in code' };
+            return { success: false, error: `Syntax error: ${error.message}` };
         }
     }
 
@@ -137,6 +137,39 @@ class Executor {
                     body: node.body,
                     scope: this.currentScope // Capture lexical scope
                 };
+
+            case 'UpdateExpression':
+                if (node.argument.type === 'Identifier') {
+                    const name = node.argument.name;
+                    const oldValue = this.currentScope.get(name);
+                    const newValue = node.operator === '++' ? oldValue + 1 : oldValue - 1;
+
+                    this.currentScope.set(name, newValue);
+                    return node.prefix ? newValue : oldValue;
+                }
+                return undefined;
+
+            case 'AssignmentExpression':
+                if (node.left.type === 'Identifier') {
+                    const name = node.left.name;
+                    const rightVal = this.evaluate(node.right);
+                    let newVal;
+
+                    const currentVal = this.currentScope.get(name);
+
+                    switch (node.operator) {
+                        case '=': newVal = rightVal; break;
+                        case '+=': newVal = currentVal + rightVal; break;
+                        case '-=': newVal = currentVal - rightVal; break;
+                        case '*=': newVal = currentVal * rightVal; break;
+                        case '/=': newVal = currentVal / rightVal; break;
+                        default: newVal = rightVal;
+                    }
+
+                    this.currentScope.set(name, newVal);
+                    return newVal;
+                }
+                return undefined;
 
             default:
                 return undefined;
@@ -266,28 +299,6 @@ class Executor {
                 break;
 
             case 'ExpressionStatement':
-                // Check if this is Promise.resolve().then() pattern
-                if (node.expression.type === 'CallExpression') {
-                    const expr = node.expression;
-
-                    // Check if this is a .then() call
-                    if (expr.callee.type === 'MemberExpression' &&
-                        expr.callee.property.name === 'then' &&
-                        expr.callee.object.type === 'CallExpression') {
-
-                        const promiseCall = expr.callee.object;
-                        const callee = getCalleeName(promiseCall.callee);
-
-                        // Check if the object is Promise.resolve()
-                        if (callee === 'Promise.resolve' || callee === 'Promise.reject') {
-                            // This is Promise.resolve().then(callback)
-                            const thenCallback = expr.arguments[0];  // The callback function
-                            this.promiseHandler.handlePromiseChain(promiseCall, thenCallback);
-                            break;  // Don't process further
-                        }
-                    }
-                }
-
                 // Regular expression statement - evaluate it for side effects (e.g. function calls)
                 this.evaluate(node.expression);
                 break;
@@ -344,6 +355,12 @@ class Executor {
      * Handle function call expressions
      */
     handleCallExpression(node) {
+        // Evaluate the object of the call if it's a method chain (e.g. Promise.resolve().then())
+        // This ensures the "left-hand side" executes first!
+        if (node.callee.type === 'MemberExpression') {
+            this.evaluate(node.callee.object);
+        }
+
         const callee = getCalleeName(node.callee);
 
         // Handle special Web API functions
@@ -353,11 +370,12 @@ class Executor {
             this.timerHandler.handleSetInterval(node);
         } else if (callee === 'requestAnimationFrame') {
             this.timerHandler.handleRAF(node);
-        } else if (callee === 'Promise.resolve' || callee === 'Promise.reject') {
+        } else if (callee === 'Promise.resolve' || callee === 'Promise.reject' || callee === 'Promise.all') {
             this.promiseHandler.handlePromiseResolve(node);
-        } else if (callee === 'then') {
-            // .then() is handled by handlePromiseChain
-            // Skip to avoid double processing
+        } else if (callee === 'then' || callee === 'catch') {
+            // Chains: .then() or .catch()
+            const callback = node.arguments[0];
+            this.promiseHandler.handlePromiseChain(node, callback, callee);
         } else if (callee === 'console.log') {
             this.consoleHandler.handle(node);
         } else {
@@ -438,11 +456,23 @@ class Executor {
 
         try {
             // Execute all micro-steps with smooth timing
-            for (const microStep of this.microSteps) {
+            for (let i = this.currentMicroStep; i < this.microSteps.length; i++) {
+                const microStep = this.microSteps[i];
+                this.currentMicroStep = i;
+
+                // Check Pause State
+                while (useVisualizerStore.getState().isPaused) {
+                    if (!useVisualizerStore.getState().isRunning) return; // Exit if stopped
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+
                 await this.executeMicroStep(microStep, speedMultiplier);
             }
+        } catch (error) {
+            console.error('Runtime Error:', error);
+            useVisualizerStore.getState().addToConsole(`Runtime Error: ${error.message}`);
         } finally {
-            store.setIsRunning(false);
+            useVisualizerStore.getState().setIsRunning(false);
             this.isExecuting = false;
         }
     }

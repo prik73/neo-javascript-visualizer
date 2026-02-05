@@ -176,5 +176,27 @@ console.log('2. Script End');`
 
 test();
 console.log('After Test Call');`
+    },
+
+    {
+        id: 'promise-error',
+        title: 'Promise Error Handling',
+        description: 'Testing .catch() and .then() skipping',
+        code: `console.log('Start');
+
+// 1. Resolve -> .then (Runs)
+Promise.resolve()
+  .then(() => console.log('1. Success'));
+
+// 2. Reject -> .then (Skip) -> .catch (Runs)
+Promise.reject()
+  .then(() => console.log('Skipped'))
+  .catch(() => console.log('2. Caught Error'));
+
+// 3. Resolve -> .catch (Skip)
+Promise.resolve()
+  .catch(() => console.log('Skipped Catch'));
+
+console.log('End');`
     }
 ];

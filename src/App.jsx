@@ -44,6 +44,13 @@ function App() {
   };
 
   const handleRun = () => {
+    // If already running, toggle pause
+    if (useVisualizerStore.getState().isRunning) {
+      const isPaused = useVisualizerStore.getState().isPaused;
+      useVisualizerStore.getState().setPaused(!isPaused);
+      return;
+    }
+
     // Reset state before running new code
     executor.reset();
     reset();

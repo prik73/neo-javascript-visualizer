@@ -126,7 +126,7 @@ export class MicroStepGenerator {
             }
         } catch (error) {
             console.error(error);
-            return { success: false, error: 'Error analyzing code' };
+            return { success: false, error: `Error analyzing code: ${error.message}` };
         }
 
         return { success: true, steps: this.executor.steps };
