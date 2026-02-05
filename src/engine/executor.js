@@ -8,6 +8,7 @@ import { getCalleeName } from './utils/astUtils.js';
 import { CallbackParser } from './utils/callbackParser.js';
 import { MicroStepExecutor } from './microSteps/microStepExecutor.js';
 import { MicroStepGenerator } from './microSteps/microStepGenerator.js';
+import { Scope } from './utils/scope.js';
 
 /**
  * Main execution engine for JavaScript code visualization
@@ -29,6 +30,10 @@ class Executor {
         this.activeTimers = [];
         this.MAX_STEPS = 10000;
         this.MAX_CODE_LENGTH = 50000;
+
+        // Scope Management
+        this.globalScope = new Scope();
+        this.currentScope = this.globalScope;
 
         // Initialize handlers
         this.consoleHandler = new ConsoleHandler(this);
@@ -88,14 +93,176 @@ class Executor {
     }
 
     /**
+     * Evaluate an AST node to get its runtime value
+     */
+    evaluate(node) {
+        if (!node) return undefined;
+
+        switch (node.type) {
+            case 'Literal':
+                return node.value;
+
+            case 'Identifier':
+                return this.currentScope.get(node.name);
+
+            case 'BinaryExpression':
+                const left = this.evaluate(node.left);
+                const right = this.evaluate(node.right);
+                switch (node.operator) {
+                    case '+': return left + right;
+                    case '-': return left - right;
+                    case '*': return left * right;
+                    case '/': return left / right;
+                    case '%': return left % right;
+                    case '>': return left > right;
+                    case '<': return left < right;
+                    case '>=': return left >= right;
+                    case '<=': return left <= right;
+                    case '==': return left == right;
+                    case '===': return left === right;
+                    case '!=': return left != right;
+                    case '!==': return left !== right;
+                    default: return undefined;
+                }
+
+            case 'CallExpression':
+                // For function calls in expressions (e.g., let x = add(1, 2))
+                // We need to execute the function and get the return value
+                return this.handleCallExpression(node);
+
+            case 'ArrowFunctionExpression':
+                return {
+                    type: 'function',
+                    params: node.params.map(p => p.name),
+                    body: node.body,
+                    scope: this.currentScope // Capture lexical scope
+                };
+
+            default:
+                return undefined;
+        }
+    }
+
+    /**
      * Walk through AST nodes and create execution steps
+     * Returns: execution result (e.g., return value) if applicable
      */
     walkAST(node, parent = null) {
         if (!node) return;
 
+        // Reset execution state result
+        let result = undefined;
+
         switch (node.type) {
             case 'Program':
-                node.body.forEach(stmt => this.walkAST(stmt, node));
+                // Reset scope for new run
+                this.globalScope = new Scope();
+                this.currentScope = this.globalScope;
+
+                for (const stmt of node.body) {
+                    const res = this.walkAST(stmt, node);
+                    if (res && res.type === 'return') return res;
+                }
+                break;
+
+            case 'BlockStatement':
+                for (let i = 0; i < node.body.length; i++) {
+                    const stmt = node.body[i];
+
+                    // Check for Await (ExpressionStatement)
+                    if (stmt.type === 'ExpressionStatement' && stmt.expression.type === 'AwaitExpression') {
+                        const awaitExpr = stmt.expression;
+
+                        // 1. Evaluate the promise (Argument of await)
+                        this.evaluate(awaitExpr.argument);
+
+                        // 2. Schedule the rest of the block as a Microtask (Continuation)
+                        const remainingStatements = node.body.slice(i + 1);
+
+                        // If there are remaining statements, defer them
+                        if (remainingStatements.length > 0) {
+                            const microtaskId = this.microtaskIdCounter++;
+                            const continuationBlock = {
+                                type: 'BlockStatement',
+                                body: remainingStatements
+                            };
+
+                            // Wrap in ArrowFunction so CallbackParser handles it correctly
+                            const continuationFunction = {
+                                type: 'ArrowFunctionExpression',
+                                params: [],
+                                body: continuationBlock,
+                                async: true,
+                                expression: false
+                            };
+
+                            this.deferredMicrotasks.push({
+                                microtaskId,
+                                callbackNode: continuationFunction,
+                                type: 'Promise.then (await)',
+                                scope: this.currentScope // Capture Closure Scope!
+                            });
+                        }
+
+                        // 3. STOP execution of this block immediately
+                        return 'SUSPEND'; // "Suspend" function
+                    }
+
+                    const res = this.walkAST(stmt, node);
+                    if (res === 'SUSPEND') return 'SUSPEND'; // Propagate suspension
+                    if (res && res.type === 'return') return res;
+                }
+                break;
+
+            case 'ForStatement':
+                // 1. Init (Run once)
+                if (node.init) this.walkAST(node.init);
+
+                // 2. Loop
+                let iterations = 0;
+                while (this.evaluate(node.test)) {
+                    if (iterations++ > 1000) {
+                        console.warn('Infinite loop detected in ForStatement');
+                        break;
+                    }
+
+                    // Execute body
+                    const res = this.walkAST(node.body, node);
+
+                    // Check for Await Suspension
+                    if (res === 'SUSPEND') {
+                        // The body suspended (hit await).
+                        // We must append the "Rest of Loop" (Update + Next Iteration) to the pending Microtask.
+                        const lastTask = this.deferredMicrotasks[this.deferredMicrotasks.length - 1];
+
+                        if (lastTask && lastTask.callbackNode && lastTask.callbackNode.body) {
+                            // Ensure we have the body array (continuation is ArrowFunc -> Block -> body array)
+                            const blockBody = lastTask.callbackNode.body.body;
+
+                            if (Array.isArray(blockBody)) {
+                                // Append Update
+                                if (node.update) {
+                                    blockBody.push({
+                                        type: 'ExpressionStatement',
+                                        expression: node.update
+                                    });
+                                }
+                                // Append Next Loop Iteration
+                                blockBody.push({
+                                    ...node,
+                                    init: null,
+                                    type: 'ForStatement'
+                                });
+                            }
+                        }
+                        return 'SUSPEND'; // Stop this stack frame
+                    }
+
+                    if (res && res.type === 'return') return res;
+
+                    // Execute Update
+                    if (node.update) this.evaluate(node.update);
+                }
                 break;
 
             case 'ExpressionStatement':
@@ -121,8 +288,8 @@ class Executor {
                     }
                 }
 
-                // Regular expression statement
-                this.walkAST(node.expression, node);
+                // Regular expression statement - evaluate it for side effects (e.g. function calls)
+                this.evaluate(node.expression);
                 break;
 
             case 'CallExpression':
@@ -135,22 +302,42 @@ class Executor {
 
             case 'VariableDeclaration':
                 node.declarations.forEach(decl => {
+                    const value = decl.init ? this.evaluate(decl.init) : undefined;
+                    this.currentScope.set(decl.id.name, value);
+
                     this.steps.push({
                         type: 'variable_declaration',
                         name: decl.id.name,
+                        value: value, // Store value for visualization
                         action: () => {
-                            // Variable declaration
+                            // Variable declaration action
                         },
                     });
                 });
                 break;
 
+            case 'ReturnStatement':
+                const returnValue = node.argument ? this.evaluate(node.argument) : undefined;
+                return { type: 'return', value: returnValue };
+
+            case 'IfStatement':
+                const test = this.evaluate(node.test);
+                if (test) {
+                    return this.walkAST(node.consequent, node);
+                } else if (node.alternate) {
+                    return this.walkAST(node.alternate, node);
+                }
+                break;
+
             default:
-                // Handle other node types
-                if (node.body) this.walkAST(node.body, node);
-                if (node.consequent) this.walkAST(node.consequent, node);
-                if (node.alternate) this.walkAST(node.alternate, node);
+                // Handle generic recursive walking for other nodes
+                // Note: We avoid blind recursion for control flow nodes handled above
+                if (node.body && !Array.isArray(node.body) && node.type !== 'BlockStatement') {
+                    return this.walkAST(node.body, node);
+                }
         }
+
+        return result;
     }
 
     /**
@@ -173,16 +360,24 @@ class Executor {
             // Skip to avoid double processing
         } else if (callee === 'console.log') {
             this.consoleHandler.handle(node);
-        } else if (this.functionRegistry[callee]) {
-            // User-defined function call
-            this.functionHandler.handleFunctionCall(node, callee);
         } else {
-            // Unknown function call - skip or handle gracefully
-            this.microSteps.push({
-                type: 'highlight',
-                line: node.loc?.start.line || null,
-                duration: 300
-            });
+            // Check scope for function variables (Arrow functions / Expressions)
+            const scopeValue = this.currentScope.get(callee);
+
+            if (scopeValue && (scopeValue.type === 'function' || typeof scopeValue === 'function')) {
+                // It's a Variable-based function (arrow or expression)
+                return this.functionHandler.handleFunctionCall(node, callee, scopeValue);
+            } else if (this.functionRegistry[callee]) {
+                // It's a FunctionDeclaration
+                return this.functionHandler.handleFunctionCall(node, callee);
+            } else {
+                // Unknown function call - skip or handle gracefully
+                this.microSteps.push({
+                    type: 'highlight',
+                    line: node.loc?.start.line || null,
+                    duration: 300
+                });
+            }
         }
     }
 

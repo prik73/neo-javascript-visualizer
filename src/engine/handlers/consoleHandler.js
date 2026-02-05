@@ -59,7 +59,8 @@ export class ConsoleHandler {
             if (arg.type === 'Literal') {
                 return typeof arg.value === 'string' ? arg.value : String(arg.value);
             } else if (arg.type === 'Identifier') {
-                return arg.name;
+                const value = this.executor.currentScope.get(arg.name);
+                return value !== undefined ? String(value) : arg.name;
             } else if (arg.type === 'BinaryExpression') {
                 return this.evaluateBinaryExpression(arg);
             } else if (arg.type === 'TemplateLiteral') {

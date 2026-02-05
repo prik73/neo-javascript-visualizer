@@ -28,56 +28,96 @@ export class MicroStepGenerator {
             this.executor.walkAST(this.executor.ast);
 
             // Process deferred MICROTASKS first (higher priority than Task Queue)
-            this.executor.deferredMicrotasks.forEach(deferred => {
+            // 1. Process deferred MICROTASKS (Main Thread Microtasks)
+            // Use for-loop to handle NESTED microtasks (added during iteration)
+            let processedMicrotasks = 0;
+            for (let i = 0; i < this.executor.deferredMicrotasks.length; i++) {
+                const deferred = this.executor.deferredMicrotasks[i];
+                processedMicrotasks++;
+
                 // Add to Microtask Queue
                 this.executor.microSteps.push({
                     type: 'microtask_add',
-                    data: {
-                        name: 'Promise.then',
-                        id: deferred.microtaskId
-                    },
+                    data: { name: 'Promise.then', id: deferred.microtaskId },
                     duration: 300
                 });
 
-                // Remove from Microtask Queue (picked up immediately)
-                this.executor.microSteps.push({
-                    type: 'microtask_remove',
-                    duration: 200
-                });
+                // Remove from Microtask Queue
+                this.executor.microSteps.push({ type: 'microtask_remove', duration: 200 });
 
                 // Execute callback
+                // Restore Scope if captured (for async/await continuations)
+                const previousScope = this.executor.currentScope;
+                if (deferred.scope) {
+                    this.executor.currentScope = deferred.scope;
+                }
+
                 const callbackMicroSteps = this.executor.callbackParser.parse(deferred.callbackNode);
                 this.executor.microSteps.push(...callbackMicroSteps);
-            });
 
-            // NOW process deferred callbacks (async code - Task Queue)
-            this.executor.deferredCallbacks.forEach(deferred => {
-                // Move from Web APIs to Task Queue
-                this.executor.microSteps.push({
-                    type: 'webapi_remove',
-                    id: deferred.timerId,
-                    duration: 200
+                // Restore previous scope
+                this.executor.currentScope = previousScope;
+            }
+
+            // 2. Process Animation Frames (Render Phase)
+            if (this.executor.deferredRAFs && this.executor.deferredRAFs.length > 0) {
+                this.executor.deferredRAFs.forEach(deferred => {
+                    // Move RAF from Web API to RAF Queue
+                    this.executor.microSteps.push({
+                        type: 'webapi_remove', id: deferred.timerId, duration: 200
+                    });
+
+                    this.executor.microSteps.push({
+                        type: 'rafqueue_add',
+                        data: { name: 'requestAnimationFrame', id: deferred.timerId },
+                        duration: 300
+                    });
+
+                    // Execute RAF
+                    this.executor.microSteps.push({
+                        type: 'rafqueue_remove', id: deferred.timerId, duration: 200
+                    });
+
+                    const callbackMicroSteps = this.executor.callbackParser.parse(deferred.callbackNode);
+                    this.executor.microSteps.push(...callbackMicroSteps);
                 });
+                // Clear handled RAFs
+                this.executor.deferredRAFs = [];
+            }
 
+            // 3. Process Tasks (with Microtask Checkpoints)
+            const pendingTasks = [...this.executor.deferredCallbacks];
+            // Sort by delay
+            pendingTasks.sort((a, b) => a.delay - b.delay);
+            this.executor.deferredCallbacks = [];
+
+            pendingTasks.forEach(deferred => {
+                // Move Task to Queue
+                this.executor.microSteps.push({ type: 'webapi_remove', id: deferred.timerId, duration: 200 });
                 this.executor.microSteps.push({
                     type: 'taskqueue_add',
-                    data: {
-                        name: 'setTimeout callback',
-                        id: deferred.timerId
-                    },
+                    data: { name: 'setTimeout callback', id: deferred.timerId },
                     duration: 300
                 });
 
-                // Remove from Task Queue (event loop picks it up)
-                this.executor.microSteps.push({
-                    type: 'taskqueue_remove',
-                    id: deferred.timerId,
-                    duration: 200
-                });
-
-                // NOW execute callback (push to CallStack, execute, pop)
+                // Execute Task
+                this.executor.microSteps.push({ type: 'taskqueue_remove', id: deferred.timerId, duration: 200 });
                 const callbackMicroSteps = this.executor.callbackParser.parse(deferred.callbackNode);
                 this.executor.microSteps.push(...callbackMicroSteps);
+
+                // Check for NEW Microtasks generated by this Task
+                for (let i = processedMicrotasks; i < this.executor.deferredMicrotasks.length; i++) {
+                    const mt = this.executor.deferredMicrotasks[i];
+                    processedMicrotasks++;
+
+                    this.executor.microSteps.push({
+                        type: 'microtask_add',
+                        data: { name: 'Promise.then', id: mt.microtaskId },
+                        duration: 300
+                    });
+                    this.executor.microSteps.push({ type: 'microtask_remove', duration: 200 });
+                    this.executor.microSteps.push(...this.executor.callbackParser.parse(mt.callbackNode));
+                }
             });
 
             // Check for step limit (infinite loop protection)

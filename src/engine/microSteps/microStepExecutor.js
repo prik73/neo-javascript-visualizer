@@ -83,6 +83,16 @@ export class MicroStepExecutor {
                 await this.delay(duration);
                 break;
 
+            case 'rafqueue_add':
+                store.addToRAFQueue(microStep.data);
+                await this.delay(duration);
+                break;
+
+            case 'rafqueue_remove':
+                store.removeFromRAFQueue(microStep.id);
+                await this.delay(duration);
+                break;
+
             case 'execute_callback':
                 if (microStep.callback) {
                     microStep.callback();

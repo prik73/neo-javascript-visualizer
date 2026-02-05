@@ -10,7 +10,12 @@ export default function TaskQueue() {
                 Task Queue
             </h3>
 
-            <div className="flex gap-2 min-h-[70px] p-4 bg-neutral-900/40 rounded-xl border border-neutral-800/30 overflow-x-auto">
+            <div
+                className="flex gap-2 min-h-[70px] p-4 bg-neutral-900/40 rounded-xl border border-neutral-800/30 overflow-x-auto relative"
+                style={{
+                    backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.02) 10px, rgba(255,255,255,0.02) 20px)'
+                }}
+            >
                 {taskQueue.length === 0 ? (
                     <div className="text-neutral-600 text-xs m-auto font-mono">empty</div>
                 ) : (

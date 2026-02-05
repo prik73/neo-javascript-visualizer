@@ -51,6 +51,7 @@ export class TimerHandler {
         this.executor.deferredCallbacks.push({
             timerId,
             callbackNode,
+            delay, // Capture delay for sorting
             type: 'setTimeout'
         });
 
@@ -92,12 +93,32 @@ export class TimerHandler {
      */
     handleRAF(node) {
         const rafId = this.executor.timerIdCounter++;
+        const callbackNode = node.arguments[0];
         const line = node.loc?.start.line || null;
 
         this.executor.microSteps.push({
             type: 'highlight',
             line: line,
             duration: 400
+        });
+
+        // Add to Web APIs (Animation Frames)
+        this.executor.microSteps.push({
+            type: 'webapi_add',
+            data: {
+                id: rafId,
+                type: 'requestAnimationFrame',
+                delay: 0
+            },
+            duration: 300
+        });
+
+        // DEFER the callback
+        if (!this.executor.deferredRAFs) this.executor.deferredRAFs = [];
+        this.executor.deferredRAFs.push({
+            timerId: rafId,
+            callbackNode,
+            type: 'requestAnimationFrame'
         });
 
         this.executor.steps.push({

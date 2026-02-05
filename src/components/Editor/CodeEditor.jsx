@@ -46,7 +46,7 @@ export default function CodeEditor() {
                     <textarea
                         value={localCode}
                         onChange={handleChange}
-                        className="absolute inset-0 w-full h-full bg-transparent text-neutral-200 font-mono text-sm resize-none focus:outline-none leading-6"
+                        className="absolute inset-0 w-full h-full bg-transparent text-neutral-200 font-mono text-sm resize-none focus:outline-none leading-6 overflow-hidden"
                         placeholder="Write your JavaScript code here..."
                         spellCheck={false}
                         style={{

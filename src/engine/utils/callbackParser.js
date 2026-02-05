@@ -12,92 +12,51 @@ export class CallbackParser {
     /**
      * Parse callback function body into micro-steps
      */
+    /**
+     * Parse callback function body into micro-steps
+     */
     parse(callbackNode) {
-        const microSteps = [];
+        if (!callbackNode) return [];
 
-        if (!callbackNode) return microSteps;
+        // 1. Temporarily swap steps array to capture actions
+        const originalMicroSteps = this.executor.microSteps;
+        const capturedSteps = [];
+        this.executor.microSteps = capturedSteps;
 
-        const body = callbackNode.body;
+        try {
+            // 2. Execute the body using the main AST walker
+            // This ensures ALL logic (checking promises, timers, console, etc.) runs exactly like main code
+            const body = callbackNode.body;
 
-        // Handle arrow function with expression body
-        if (callbackNode.type === 'ArrowFunctionExpression' && body.type !== 'BlockStatement') {
-            return this.parseExpression(body);
+            // Handle arrow function implicit return / expression body
+            if (callbackNode.type === 'ArrowFunctionExpression' && body.type !== 'BlockStatement') {
+                // If it's an expression like () => console.log('hi'), wrap in Statement for walker?
+                // Or just evaluate? walkAST expects Statements.
+                // Wrapper: { type: 'ExpressionStatement', expression: body }
+                this.executor.walkAST({
+                    type: 'ExpressionStatement',
+                    expression: body,
+                    loc: body.loc // Preserve location
+                });
+            } else {
+                // BlockStatement
+                this.executor.walkAST(body);
+            }
+
+        } catch (e) {
+            console.error('Error parsing callback:', e);
+        } finally {
+            // 3. Restore original array
+            this.executor.microSteps = originalMicroSteps;
         }
 
-        // Handle block statement body
-        if (body.type === 'BlockStatement') {
-            body.body.forEach(statement => {
-                if (statement.type === 'ExpressionStatement') {
-                    const expr = statement.expression;
-
-                    if (expr.type === 'CallExpression') {
-                        const callee = getCalleeName(expr.callee);
-
-                        if (callee === 'console.log') {
-                            const line = statement.loc?.start.line || null;
-                            const message = evaluateLogArguments(expr.arguments);
-
-                            microSteps.push({
-                                type: 'highlight',
-                                line: line,
-                                duration: 400
-                            });
-
-                            microSteps.push({
-                                type: 'callstack_push',
-                                name: `console.log(${message})`,
-                                duration: 300
-                            });
-
-                            microSteps.push({
-                                type: 'console_output',
-                                message: message,
-                                duration: 200
-                            });
-
-                            microSteps.push({
-                                type: 'callstack_pop',
-                                duration: 300
-                            });
-                        }
-                    }
-                }
-            });
-        }
-
-        return microSteps;
+        return capturedSteps;
     }
 
     /**
-     * Parse single expression (for arrow functions)
+     * Parse single expression (Deprecated - kept for safe removal ref)
      */
     parseExpression(expr) {
-        const microSteps = [];
-
-        if (expr.type === 'CallExpression') {
-            const callee = getCalleeName(expr.callee);
-            if (callee === 'console.log') {
-                const message = evaluateLogArguments(expr.arguments);
-
-                microSteps.push({
-                    type: 'callstack_push',
-                    name: `console.log(${message})`,
-                    duration: 300
-                });
-
-                microSteps.push({
-                    type: 'console_output',
-                    message: message,
-                    duration: 200
-                });
-
-                microSteps.push({
-                    type: 'callstack_pop',
-                    duration: 300
-                });
-            }
-        }
-
-        return microSteps;
+        return [];
     }
 }
