@@ -280,31 +280,23 @@ class Executor {
 
                     // Check for Await Suspension
                     if (res === 'SUSPEND') {
-                        // The body suspended (hit await).
-                        // We must append the "Rest of Loop" (Update + Next Iteration) to the pending Microtask.
-                        const lastTask = this.deferredMicrotasks[this.deferredMicrotasks.length - 1];
+                        // CRITICAL FIX: Don't append the ForStatement back to microtasks
+                        // This was causing infinite recursion during code generation
+                        // Instead, throw a descriptive error
+                        const errorMsg = 'async/await inside loops is not currently supported in the visualizer';
+                        console.error(errorMsg);
 
-                        if (lastTask && lastTask.callbackNode && lastTask.callbackNode.body) {
-                            // Ensure we have the body array (continuation is ArrowFunc -> Block -> body array)
-                            const blockBody = lastTask.callbackNode.body.body;
+                        // Add error to console output
+                        this.microSteps.push({
+                            type: 'console_output',
+                            message: `Error: ${errorMsg}`,
+                            logType: 'error',
+                            description: 'Unsupported feature detected',
+                            duration: 500
+                        });
 
-                            if (Array.isArray(blockBody)) {
-                                // Append Update
-                                if (node.update) {
-                                    blockBody.push({
-                                        type: 'ExpressionStatement',
-                                        expression: node.update
-                                    });
-                                }
-                                // Append Next Loop Iteration
-                                blockBody.push({
-                                    ...node,
-                                    init: null,
-                                    type: 'ForStatement'
-                                });
-                            }
-                        }
-                        return 'SUSPEND'; // Stop this stack frame
+                        // Stop execution gracefully
+                        return 'SUSPEND';
                     }
 
                     if (res && res.type === 'return') return res;
@@ -411,6 +403,7 @@ class Executor {
                 this.microSteps.push({
                     type: 'highlight',
                     line: node.loc?.start.line || null,
+                    description: `Evaluating ${callee || 'function'}()`,
                     duration: 300
                 });
             }

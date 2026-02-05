@@ -20,6 +20,7 @@ export class TimerHandler {
         this.executor.microSteps.push({
             type: 'highlight',
             line: line,
+            description: `Executing setTimeout(${delay}ms)`,
             duration: 400
         });
 
@@ -27,6 +28,7 @@ export class TimerHandler {
         this.executor.microSteps.push({
             type: 'callstack_push',
             name: `setTimeout(fn, ${delay})`,
+            description: 'Pushing setTimeout to Call Stack',
             duration: 300
         });
 
@@ -38,12 +40,14 @@ export class TimerHandler {
                 type: 'setTimeout',
                 delay: delay
             },
+            description: `Registering Timer ID ${timerId}`,
             duration: 300
         });
 
         // Pop setTimeout from CallStack
         this.executor.microSteps.push({
             type: 'callstack_pop',
+            description: 'Popping setTimeout from Call Stack',
             duration: 300
         });
 

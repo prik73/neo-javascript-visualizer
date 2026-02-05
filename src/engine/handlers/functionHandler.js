@@ -34,6 +34,7 @@ export class FunctionHandler {
         this.executor.microSteps.push({
             type: 'highlight',
             line: line,
+            description: `Calling function ${displayName}`,
             duration: 400
         });
 
@@ -41,6 +42,7 @@ export class FunctionHandler {
         this.executor.microSteps.push({
             type: 'callstack_push',
             name: displayName,
+            description: `Pushing ${funcName} to Call Stack`,
             duration: 300
         });
 

@@ -25,6 +25,9 @@ export class MicroStepExecutor {
         const store = useVisualizerStore.getState();
         const duration = (microStep.duration || 100) * speedMultiplier;
 
+        // Update Status Panel
+        store.setStepDescription(microStep.description || 'Executing...');
+
         switch (microStep.type) {
             case 'highlight':
                 store.setCurrentLine(microStep.line);

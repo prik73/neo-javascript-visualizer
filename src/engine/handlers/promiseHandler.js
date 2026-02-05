@@ -73,6 +73,7 @@ export class PromiseHandler {
         this.executor.microSteps.push({
             type: 'highlight',
             line: line,
+            description: `Analyzing Promise.${method} chain`,
             duration: 400
         });
 
@@ -80,6 +81,7 @@ export class PromiseHandler {
         this.executor.microSteps.push({
             type: 'callstack_push',
             name: `Promise.${method}()`, // 'then' or 'catch'
+            description: `Pushing Promise.${method} to Call Stack`,
             duration: 300
         });
         this.executor.microSteps.push({
@@ -119,12 +121,14 @@ export class PromiseHandler {
         this.executor.microSteps.push({
             type: 'highlight',
             line: line,
+            description: 'Analyzing Promise.resolve()',
             duration: 400
         });
 
         this.executor.microSteps.push({
             type: 'callstack_push',
             name: 'Promise.resolve()',
+            description: 'Pushing Promise.resolve() to Call Stack',
             duration: 300
         });
 

@@ -18,12 +18,14 @@ export class ConsoleHandler {
         this.executor.microSteps.push({
             type: 'highlight',
             line: line,
+            description: `Evaluating console.${type}(...)`,
             duration: 400
         });
 
         this.executor.microSteps.push({
             type: 'callstack_push',
             name: `console.${type}(${message})`,
+            description: `Pushing console.${type} to Call Stack`,
             duration: 300
         });
 
@@ -31,6 +33,7 @@ export class ConsoleHandler {
             type: 'console_output',
             message: message,
             logType: type, // Pass type to UI
+            description: `Printing "${message}" to Console`,
             duration: 200
         });
 

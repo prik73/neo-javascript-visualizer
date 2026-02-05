@@ -9,11 +9,37 @@ export function createInterceptor(store) {
     const originalRequestAnimationFrame = window.requestAnimationFrame;
     const originalPromise = window.Promise;
 
-    return {
+    // Flag to prevent intercepting our own internal calls
+    let isInternalCall = false;
+
+    // Flag to control when interceptor is active (only during user code execution)
+    let isEnabled = false;
+
+    const interceptor = {
+        // Method to enable/disable the interceptor
+        setEnabled(enabled) {
+            isEnabled = enabled;
+        },
         /**
          * Intercept setTimeout
          */
         setTimeout: (callback, delay, ...args) => {
+            // Don't intercept if disabled or internal call
+            if (!isEnabled || isInternalCall) {
+                return originalSetTimeout(callback, delay, ...args);
+            }
+
+            // Filter out common development environment timers (Vite HMR, React DevTools)
+            // These are typically 250ms or 2000ms intervals
+            const isDevelopmentTimer = (delay === 250 || delay === 2000) &&
+                (callback.toString().includes('__vite') ||
+                    callback.toString().includes('react-devtools') ||
+                    callback.toString().length > 500); // Large minified callbacks
+
+            if (isDevelopmentTimer) {
+                return originalSetTimeout(callback, delay, ...args);
+            }
+
             const id = `timer_${crypto.randomUUID()}`;
 
             // Add to Web APIs
@@ -37,9 +63,11 @@ export function createInterceptor(store) {
                 // Execute callback
                 callback(...args);
 
-                // Remove from task queue after execution
+                // Remove from task queue after execution (use internal flag)
+                isInternalCall = true;
                 originalSetTimeout(() => {
                     store.removeFromTaskQueue(id);
+                    isInternalCall = false;
                 }, 100);
             }, delay || 0);
 
@@ -50,6 +78,21 @@ export function createInterceptor(store) {
          * Intercept setInterval
          */
         setInterval: (callback, delay, ...args) => {
+            // Don't intercept if disabled or internal call
+            if (!isEnabled || isInternalCall) {
+                return originalSetInterval(callback, delay, ...args);
+            }
+
+            // Filter out development environment intervals
+            const isDevelopmentTimer = (delay === 250 || delay === 2000) &&
+                (callback.toString().includes('__vite') ||
+                    callback.toString().includes('react-devtools') ||
+                    callback.toString().length > 500);
+
+            if (isDevelopmentTimer) {
+                return originalSetInterval(callback, delay, ...args);
+            }
+
             const id = `interval_${crypto.randomUUID()}`;
 
             // Add to Web APIs
@@ -70,9 +113,11 @@ export function createInterceptor(store) {
                 // Execute callback
                 callback(...args);
 
-                // Remove from task queue after execution
+                // Remove from task queue after execution (use internal flag)
+                isInternalCall = true;
                 originalSetTimeout(() => {
                     store.removeFromTaskQueue(id);
+                    isInternalCall = false;
                 }, 100);
             }, delay || 0);
 
@@ -117,31 +162,26 @@ export function createInterceptor(store) {
 
                 return super.then(
                     (value) => {
-                        // Remove from microtask queue
+                        // Remove from microtask queue (use internal flag)
+                        isInternalCall = true;
                         originalSetTimeout(() => {
                             store.removeFromMicrotaskQueue();
+                            isInternalCall = false;
                         }, 50);
 
                         return onFulfilled ? onFulfilled(value) : value;
                     },
-                    onRejected
+                    (error) => {
+                        // Remove from microtask queue on error (use internal flag)
+                        isInternalCall = true;
+                        originalSetTimeout(() => {
+                            store.removeFromMicrotaskQueue();
+                            isInternalCall = false;
+                        }, 50);
+
+                        return onRejected ? onRejected(error) : Promise.reject(error);
+                    }
                 );
-            }
-
-            catch(onRejected) {
-                // Add to microtask queue
-                store.addToMicrotaskQueue({
-                    name: 'Promise.catch',
-                });
-
-                return super.catch((error) => {
-                    // Remove from microtask queue
-                    originalSetTimeout(() => {
-                        store.removeFromMicrotaskQueue();
-                    }, 50);
-
-                    return onRejected ? onRejected(error) : Promise.reject(error);
-                });
             }
         },
 
@@ -158,11 +198,15 @@ export function createInterceptor(store) {
             },
         },
     };
+
+    return interceptor;
 }
 
 /**
  * Install interceptors globally
  */
+let interceptorInstance = null;
+
 export function installInterceptors(store) {
     // Save originals BEFORE any interception
     if (!window.__originalAPIs) {
@@ -175,13 +219,31 @@ export function installInterceptors(store) {
         };
     }
 
-    const interceptor = createInterceptor(store);
+    interceptorInstance = createInterceptor(store);
 
-    window.setTimeout = interceptor.setTimeout;
-    window.setInterval = interceptor.setInterval;
-    window.requestAnimationFrame = interceptor.requestAnimationFrame;
-    window.Promise = interceptor.Promise;
-    window.console.log = interceptor.console.log;
+    window.setTimeout = interceptorInstance.setTimeout;
+    window.setInterval = interceptorInstance.setInterval;
+    window.requestAnimationFrame = interceptorInstance.requestAnimationFrame;
+    window.Promise = interceptorInstance.Promise;
+    window.console.log = interceptorInstance.console.log;
+}
+
+/**
+ * Enable interceptor (start tracking user code)
+ */
+export function enableInterceptor() {
+    if (interceptorInstance) {
+        interceptorInstance.setEnabled(true);
+    }
+}
+
+/**
+ * Disable interceptor (stop tracking, allow background timers)
+ */
+export function disableInterceptor() {
+    if (interceptorInstance) {
+        interceptorInstance.setEnabled(false);
+    }
 }
 
 /**

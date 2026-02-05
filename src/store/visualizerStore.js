@@ -22,8 +22,10 @@ export const useVisualizerStore = create((set) => ({
     // Code
     currentCode: '',
     currentLine: null,
+    stepDescription: 'Ready',
 
     // Actions
+    setStepDescription: (desc) => set({ stepDescription: desc }),
     setIsRunning: (isRunning) => set({ isRunning }),
     setRunning: (isRunning) => set({ isRunning }),
     setPaused: (isPaused) => set({ isPaused }),
@@ -91,6 +93,7 @@ export const useVisualizerStore = create((set) => ({
         currentLine: null,
         isRunning: false,
         isPaused: false,
+        stepDescription: 'Ready',
     }),
 }));
 

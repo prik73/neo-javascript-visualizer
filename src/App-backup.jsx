@@ -16,6 +16,7 @@ import { installInterceptors, restoreOriginalAPIs } from './engine/interceptor.j
 import './App.css';
 
 function App() {
+  console.log('[APP DEBUG] App component rendering...');
   const setCurrentCode = useVisualizerStore((state) => state.setCurrentCode);
   const reset = useVisualizerStore((state) => state.reset);
   const speed = useVisualizerStore((state) => state.speed);
@@ -24,15 +25,20 @@ function App() {
   const [editorWidth, setEditorWidth] = useState(35);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef(null);
+  console.log('[APP DEBUG] App state initialized');
 
   // Install Web API interceptors on mount
   useEffect(() => {
+    console.log('[APP DEBUG] Installing interceptors...');
     installInterceptors(useVisualizerStore.getState());
+    console.log('[APP DEBUG] Interceptors installed');
     return () => restoreOriginalAPIs();
   }, []);
 
   useEffect(() => {
+    console.log('[APP DEBUG] Setting initial code...');
     setCurrentCode(presets[0].code);
+    console.log('[APP DEBUG] Initial code set');
   }, [setCurrentCode]);
 
   const handlePresetChange = (e) => {

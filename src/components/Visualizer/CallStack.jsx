@@ -1,8 +1,10 @@
 import { COLORS } from '../../utils/constants';
 import useVisualizerStore from '../../store/visualizerStore';
+import { useAutoAnimate } from '@formkit/auto-animate/react';
 
 export default function CallStack() {
     const callStack = useVisualizerStore((state) => state.callStack);
+    const [parent] = useAutoAnimate();
 
     return (
         <div className="flex flex-col gap-3">
@@ -10,7 +12,7 @@ export default function CallStack() {
                 Call Stack
             </h3>
 
-            <div className="flex flex-col-reverse gap-2 min-h-[200px] p-4 bg-neutral-900/40 rounded-xl border border-neutral-800/30">
+            <div ref={parent} className="flex flex-col-reverse gap-2 min-h-[200px] p-4 bg-neutral-900/40 rounded-xl border border-neutral-800/30 overflow-hidden">
                 {callStack.length === 0 ? (
                     <div className="text-neutral-600 text-xs text-center my-auto font-mono">
                         empty
@@ -19,7 +21,7 @@ export default function CallStack() {
                     callStack.map((item, index) => (
                         <div
                             key={`${item.name}-${index}`}
-                            className="px-3 py-2.5 rounded-lg text-xs font-mono transition-all duration-200 backdrop-blur-sm animate-stackPush"
+                            className="px-3 py-2.5 rounded-lg text-xs font-mono backdrop-blur-sm"
                             style={{
                                 backgroundColor: COLORS.callStack + '15',
                                 borderLeft: `2px solid ${COLORS.callStack}`,
