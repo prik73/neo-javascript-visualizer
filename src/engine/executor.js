@@ -242,7 +242,23 @@ class Executor {
                     }
 
                     const res = this.walkAST(stmt, node);
-                    if (res === 'SUSPEND') return 'SUSPEND'; // Propagate suspension
+                    if (res === 'SUSPEND') {
+                        // Execution suspended in a child (e.g., inside a loop), but we still have remaining statements in THIS block.
+                        // We must append them to the pending microtask so they run after the child finishes.
+                        const remainingStatements = node.body.slice(i + 1);
+                        if (remainingStatements.length > 0) {
+                            const lastTask = this.deferredMicrotasks[this.deferredMicrotasks.length - 1];
+                            if (lastTask && lastTask.callbackNode && lastTask.callbackNode.body) {
+                                const callbackBody = lastTask.callbackNode.body.body; // Array of statements
+                                if (Array.isArray(callbackBody)) {
+                                    // Append remaining statements to the END of the continuation
+                                    // (This ensures they run after the child's continuation logic completes)
+                                    remainingStatements.forEach(s => callbackBody.push(s));
+                                }
+                            }
+                        }
+                        return 'SUSPEND'; // Propagate suspension
+                    }
                     if (res && res.type === 'return') return res;
                 }
                 break;
@@ -372,12 +388,14 @@ class Executor {
             this.timerHandler.handleRAF(node);
         } else if (callee === 'Promise.resolve' || callee === 'Promise.reject' || callee === 'Promise.all') {
             this.promiseHandler.handlePromiseResolve(node);
-        } else if (callee === 'then' || callee === 'catch') {
+        } else if (node.callee.type === 'MemberExpression' && (node.callee.property.name === 'then' || node.callee.property.name === 'catch')) {
             // Chains: .then() or .catch()
             const callback = node.arguments[0];
-            this.promiseHandler.handlePromiseChain(node, callback, callee);
-        } else if (callee === 'console.log') {
-            this.consoleHandler.handle(node);
+            const method = node.callee.property.name;
+            this.promiseHandler.handlePromiseChain(node, callback, method);
+        } else if (callee === 'console.log' || callee === 'console.error' || callee === 'console.warn') {
+            const type = callee.split('.')[1];
+            this.consoleHandler.handle(node, type);
         } else {
             // Check scope for function variables (Arrow functions / Expressions)
             const scopeValue = this.currentScope.get(callee);

@@ -42,7 +42,10 @@ export class MicroStepExecutor {
                 break;
 
             case 'console_output':
-                store.addToConsole(microStep.message);
+                store.addToConsole({
+                    message: microStep.message,
+                    type: microStep.logType
+                });
                 await this.delay(duration);
                 break;
 

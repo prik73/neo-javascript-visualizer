@@ -1,3 +1,5 @@
+import { getCalleeName } from '../utils/astUtils.js';
+
 /**
  * Promise Handler
  * Handles Promise.resolve().then() with Microtask Queue
@@ -27,7 +29,7 @@ export class PromiseHandler {
 
         while (currentNode && depth < 20) {
             if (currentNode.callee) {
-                const calleeName = this.executor.getCalleeName(currentNode.callee);
+                const calleeName = getCalleeName(currentNode.callee);
 
                 // Check if we hit the root Promise creation
                 if (calleeName === 'Promise.reject') {

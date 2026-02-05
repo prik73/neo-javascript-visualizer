@@ -8,9 +8,9 @@ export class ConsoleHandler {
     }
 
     /**
-     * Handle console.log
+     * Handle console.log/error/warn
      */
-    handle(node) {
+    handle(node, type = 'log') {
         const line = node.loc?.start.line || null;
         const message = this.evaluateLogArguments(node.arguments);
 
@@ -23,13 +23,14 @@ export class ConsoleHandler {
 
         this.executor.microSteps.push({
             type: 'callstack_push',
-            name: `console.log(${message})`,
+            name: `console.${type}(${message})`,
             duration: 300
         });
 
         this.executor.microSteps.push({
             type: 'console_output',
             message: message,
+            logType: type, // Pass type to UI
             duration: 200
         });
 

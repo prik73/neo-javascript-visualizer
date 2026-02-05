@@ -28,7 +28,9 @@ export default function Console() {
                     consoleOutput.map((log, index) => (
                         <div
                             key={index}
-                            className="py-0.5 text-neutral-300 animate-consoleAppear flex items-start"
+                            className={`py-0.5 animate-consoleAppear flex items-start ${log.type === 'error' ? 'text-red-400' :
+                                    log.type === 'warn' ? 'text-amber-400' : 'text-neutral-300'
+                                }`}
                         >
                             <span className="text-neutral-600 mr-2 select-none flex-none">›</span>
                             <span className="break-all whitespace-pre-wrap">
